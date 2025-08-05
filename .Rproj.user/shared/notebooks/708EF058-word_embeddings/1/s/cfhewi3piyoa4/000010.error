@@ -1,0 +1,1 @@
+{"frames":[],"message":"Error in mutate(us_transcripts, trump_only = stringi::stri_trans_general(trump_only,  : \n  could not find function \"mutate\"\n"}

@@ -1,0 +1,23 @@
+"0","us_transcripts_mid <- as.data.frame(us_transcripts_unfiltered) %>%
+  mutate(
+    type = str_extract(title, ""^[^:]+""),
+    title = str_trim(str_remove(title, ""^[^:]+:\\s*"")),
+    transcript = if_else(str_starts(title, ""No Transcript -""), ""No"", ""Yes""),
+    title = str_remove(title, ""^No Transcript -\\s*""),  # removes the prefix if present
+    date_parsed = ymd(date), # converting to Date object
+    trump_only = na_if(trump_only, """"), # entering NAs for all blank entries
+    homan_only = na_if(homan_only, """"),
+    leavitt_only = na_if(leavitt_only, """"),
+    rubio_only = na_if(rubio_only, """"),
+    miller_only = na_if(miller_only, """")
+  ) %>%
+  drop_na(date_parsed) %>% # removing the one South African observation with no date
+  filter(date_parsed <= as.Date(""2025-06-01"")) %>% # filtering everything after May 31st
+  select(-date) # getting rid of the character variable bc it's not useful
+"
+"1","[1m[33mError[39m in `mutate()`:[22m
+[38;5;254m[36mℹ[38;5;254m In argument: `type = str_extract(title, ""^[^:]+"")`.[39m
+[1mCaused by error in `str_extract()`:[22m
+[33m![39m `string` must be a vector, not a function.
+[90mRun `]8;;x-r-run:rlang::last_trace()rlang::last_trace()]8;;` to see where the error occurred.[39m
+"

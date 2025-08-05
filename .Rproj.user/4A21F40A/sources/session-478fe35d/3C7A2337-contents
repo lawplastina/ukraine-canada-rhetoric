@@ -1,0 +1,109 @@
+---
+title: "US DCM and Word Mover's Distance"
+author: "Lawrence Plastina"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# SAVE DATAFRAME AS R OBJECT AND LOAD IT IN HERE
+
+library("quanteda")
+library("spacyr")
+library("text2map") 
+library("text2vec")
+library("ggrepel")
+library("textclean")
+library("textclean")
+library("irlba")
+library("tibble")
+```
+
+```{r}
+# First, need a data frame with column of texts and column of document ids
+
+# head(us_transcripts)
+
+us_transcripts$id <- seq.int(nrow(us_transcripts))
+
+us_transcripts$id <- as.character(us_transcripts$id)
+
+dtm_trump <- us_transcripts |> 
+dtm_builder(text = trump_only, doc_id = id) |> 
+dtm_stopper(stop_list = get_stoplist("snowball2014"), stop_docprop = c(.01, Inf))
+
+# Now what we need is a dtm with everyone else's remarks in one
+# maybe a column titled 'other_only'
+
+# first, make a new column with all of leavitt, homan, and rubio's(?) statements
+# well first, check if Rubio is even there
+
+sum(!is.na(us_transcripts$rubio_only)) #10. Probably too sparse? Twitter is a pain but I can try again
+
+us_transcripts <- us_transcripts %>%
+  mutate(other_only = coalesce(homan_only, leavitt_only, miller_only, rubio_only))
+
+us_transcripts <- us_transcripts |> 
+  mutate(
+    other_only = stringi::stri_trans_general(other_only, "Any-Latin; Latin-ASCII"),
+    other_only = replace_contraction(other_only),
+    other_only = tolower(other_only),
+    other_only = gsub("[[:punct:]]+", " ", other_only),
+    other_only = gsub("\\s+", " ", other_only)
+  )
+
+# head(us_transcripts)
+
+dtm_other <- us_transcripts |> 
+dtm_builder(text = other_only, doc_id = id) |> 
+dtm_stopper(stop_list = get_stoplist("snowball2014"), stop_docprop = c(.01, Inf))
+
+vocab <- intersect(rownames(wv_tng_trump), colnames(dtm_trump)) # I'm not 100% about wv_tng_trump
+vocab <- intersect(vocab, colnames(dtm_other)) 
+
+wv_trump_sub <- wv_tng_trump[vocab, ] 
+dtm_trump <- dtm_trump[, vocab] 
+dtm_other <- dtm_other[, vocab]
+
+wmd_mod <- RWMD$new(x = dtm_other, embeddings = wv_trump_sub) 
+wmd_dis <- wmd_mod$sim2(x = dtm_trump)
+
+df_sim <- wmd_dis |> as.data.frame() |> 
+  rownames_to_column(var = "id") 
+
+trump_only <- us_transcripts %>%
+  select(trump_only, id) %>%
+  mutate(id = as.character(id))
+
+df_sim <- left_join(df_sim, trump_only, by = "id")
+```
+
+```{r}
+df_sim <- df_sim |>
+  left_join(us_transcripts |> select(id, date_parsed), by = "id")
+
+df_sim$mean_similarity <- rowMeans(wmd_dis)
+
+df_sim <- df_sim |>
+  mutate(month = lubridate::floor_date(date_parsed, "month")) |>
+  group_by(month) |>
+  summarise(mean_similarity = mean(mean_similarity, na.rm = TRUE))
+
+ggplot(df_sim, aes(x = month, y = mean_similarity)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal()
+```
+
+## Troubleshooting
+
+```{r}
+length(vocab) #822 - this is a reasonable amount of overlap
+
+summary(df_sim$mean_similarity) # why is there a negative value here
+```
+

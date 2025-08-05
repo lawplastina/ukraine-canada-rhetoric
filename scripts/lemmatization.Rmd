@@ -1,0 +1,34 @@
+---
+title: "Lemmatization"
+author: "Lawrence Plastina"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+source("C:/Users/12015/Desktop/popova_beland/scripts/word_embeddings.Rmd")
+```
+
+```{r}
+# Now starting the lemmatization process
+
+# Run this when using for the first time to set up spacy, install necessary lang models
+# spacy_install(
+#   version = "latest",
+#   lang_models = c("en_core_web_sm", "ru_core_news_sm"),
+#   ask = interactive(),
+#   force = FALSE
+# )
+# 
+# spacy_download_langmodel("en_core_web_sm")
+# spacy_download_langmodel("ru_core_news_sm")
+
+spacy_initialize(model = "en_core_web_sm")
+
+# So, spacy_parse doesn't work with the tokens, only the untokenized trump corpus
+# Do I even need to lemmatize tbh
+
+spacy_finalize()
+```

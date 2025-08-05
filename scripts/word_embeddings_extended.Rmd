@@ -1,0 +1,120 @@
+---
+title: "Semantic Centroids"
+author: "Lawrence Plastina"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Doing this again
+
+```{r}
+# THIS WHOLE SCRIPT REQUIRES RUNNING word_embeddings.Rmd FIRST PLEASE
+
+g_model <- GlobalVectors$new(rank = 100, x_max = 20)
+
+# Create our TCM 
+us_words <- space_tokenizer(us_transcripts$trump_only) 
+us_iterate <- itoken(us_words) 
+us_voc <- create_vocabulary(us_iterate) 
+us_vocab_vec <- vocab_vectorizer(us_voc) 
+us_st_tcm <- create_tcm(us_iterate, us_vocab_vec, skip_grams_window = 5L) 
+us_st_vectors <- g_model$fit_transform(us_st_tcm, n_iter = 50)
+
+us_st_vectors <- us_st_vectors + t(g_model$components)
+```
+
+```{r}
+us_st_2d <- us_st_vectors |> 
+  as.data.frame() |> 
+  mutate(name = rownames(us_st_vectors)) |> 
+  filter(!name %in% get_stoplist("snowball2014")) |> 
+  select(!name) 
+
+us_wv_coords <- svd(us_st_2d)$u 
+us_wv_coords <- us_wv_coords |> 
+  as.data.frame() |> 
+  select(V1, V2) |> 
+  mutate(name = rownames(us_st_2d))
+
+us_wv_coords |> 
+  mutate(col = case_when(
+    abs(V1) >= 0.025 ~ TRUE, 
+    abs(V2) >= 0.025 ~ TRUE, 
+    TRUE ~ FALSE), 
+    lab = case_when( 
+      abs(V1) >= 0.025 ~ name, 
+      abs(V2) >= 0.025 ~ name, 
+      TRUE ~ NA_character_)) |> 
+  ggplot(aes(V1, V2)) + 
+  geom_point(aes(color = col), alpha = 0.1, show.legend = FALSE) +
+  geom_text_repel(aes(label = lab), 
+                  max.overlaps = Inf, show.legend = FALSE) +
+  labs(x = "Dimension 1", y = "Dimension 2")
+```
+
+```{r}
+library(uwot)
+us_umap <- umap(us_st_2d, n_neighbors = 15, min_dist = 0.1, metric = "cosine")
+us_plot_df <- as.data.frame(us_umap)
+us_plot_df$name <- rownames(us_st_2d)
+
+ggplot(us_plot_df, aes(V1, V2)) +
+  geom_point(alpha = 0.2) +
+  geom_text_repel(aes(label = name), max.overlaps = 185) +
+  labs(x = "UMAP 1", y = "UMAP 2")
+```
+
+Need to cite this paper for the word vectors:
+
+@inproceedings{mikolov2018advances,
+  title={Advances in Pre-Training Distributed Word Representations},
+  author={Mikolov, Tomas and Grave, Edouard and Bojanowski, Piotr and Puhrsch, Christian and Joulin, Armand},
+  booktitle={Proceedings of the International Conference on Language Resources and Evaluation (LREC 2018)},
+  year={2018}
+}
+
+```{r}
+library(text2vec)
+
+# Unzip it first, then load the .vec file
+vec_file <- "crawl-300d-2M.vec"  # path to the unzipped file
+
+read_vec_file <- function(file_path, vocab = NULL, n_max = Inf) {
+  con <- file(file_path, "r", blocking = FALSE)
+  on.exit(close(con))
+  
+  # Read header if it exists
+  header <- readLines(con, n = 1)
+  dims <- as.integer(strsplit(header, " ")[[1]][2])
+  
+  word_list <- list()
+  vec_list <- list()
+  i <- 1
+  
+  while(length(line <- readLines(con, n = 1)) > 0 && i <= n_max) {
+    split_line <- strsplit(line, " ")[[1]]
+    word <- split_line[1]
+    
+    if (is.null(vocab) || word %in% vocab) {
+      vec <- as.numeric(split_line[-1])
+      word_list[[i]] <- word
+      vec_list[[i]] <- vec
+      i <- i + 1
+    }
+  }
+  
+  mat <- do.call(rbind, vec_list)
+  rownames(mat) <- unlist(word_list)
+  return(mat)
+}
+
+
+vec_matrix <- read_vec_file("C:\Users\12015\Desktop\popova_beland\crawl-300d-2M.vec", n_max = 50000)
+
+atn_vectors <- wv[rownames(wv) %in% colnames(dtm_atn), ]
+```
+

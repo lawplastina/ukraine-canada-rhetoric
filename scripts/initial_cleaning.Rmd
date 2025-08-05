@@ -1,0 +1,162 @@
+---
+title: "Initial cleaning"
+author: "Lawrence Plastina"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ndjson)
+library(dplyr)
+library(stringr)
+library(lubridate)
+library(tidyr)
+library(jsonlite)
+library(xml2)
+library(rvest)
+```
+
+```{r}
+setwd("C:/Users/12015/Desktop/popova_beland")
+
+# Read NDJSON file into R
+us_transcripts_unfiltered <- ndjson::stream_in("C:/Users/12015/Desktop/popova_beland/output_transcripts/all_transcripts_with_officials.ndjson")
+
+us_transcripts_mid <- as.data.frame(us_transcripts_unfiltered) %>%
+  mutate(
+    type = str_extract(title, "^[^:]+"),
+    title = str_trim(str_remove(title, "^[^:]+:\\s*")),
+    transcript = if_else(str_starts(title, "No Transcript -"), "No", "Yes"),
+    title = str_remove(title, "^No Transcript -\\s*"),  # removes the prefix if present
+    date_parsed = ymd(date), # converting to Date object
+    trump_only = na_if(trump_only, ""), # entering NAs for all blank entries
+    homan_only = na_if(homan_only, ""),
+    leavitt_only = na_if(leavitt_only, ""),
+    rubio_only = na_if(rubio_only, ""),
+    miller_only = na_if(miller_only, "")
+  ) %>%
+  drop_na(date_parsed) %>% # removing the one South African observation with no date
+  filter(date_parsed <= as.Date("2025-06-01")) %>% # filtering everything after May 31st
+  select(-date) # getting rid of the character variable bc it's not useful
+
+# Now pulling in Truth Social posts
+
+# Useful function: 
+html_to_text <- function(x) {
+  doc <- read_html(x)
+  html_text(doc, trim = TRUE)
+}
+
+trump_transcripts_unfiltered <- read.csv("C:/Users/12015/Desktop/popova_beland/trump_truth_fuller.csv")
+
+trump_transcripts <- trump_transcripts_unfiltered %>%
+  mutate(date_parsed_sec = ymd_hms(created_at),
+         date_parsed = date(date_parsed_sec),
+         type = "Truth Social") %>%
+  filter(date_parsed <= as.Date("2025-06-01")) %>%
+  mutate(trump_only = sapply(content, html_to_text),
+         trump_only =
+           str_remove_all(trump_only, "https://[^\\s\"'>]+"), #OPTIONAL: removing posts with only links
+         # Note: also filter out posts like "RT:", "USGB", etc?
+         trump_only = na_if(trump_only, "")) %>%
+  mutate(full_transcript = trump_only) %>%
+    select(-created_at, -date_parsed_sec, -id, -quote_id,
+         -in_reply_to_id, -in_reply_to_account_id, -content) %>%
+  filter(!is.na(trump_only))
+
+us_transcripts <- full_join(us_transcripts_mid, trump_transcripts) %>%
+  filter(date_parsed >= as.Date("2024-11-05")) %>%
+  arrange(date_parsed)
+
+```
+
+Now for the Russians
+
+```{r}
+ru_transcripts_unfiltered <- ndjson::stream_in(normalizePath("C:/Users/12015/Desktop/popova_beland/kremlin/kremlin_transcripts.json"))
+
+ru_transcripts_mid <- ru_transcripts_unfiltered %>%
+  mutate(date_parsed = ymd_hms(date),
+         teaser = na_if(teaser, ""),
+         transcript_filtered = na_if(transcript_filtered, ""),
+         type = "publication",
+         person = "putin") %>% #IS THIS RIGHT?? CHECK
+  select(-starts_with(c("wordlist", "tags", "persons")), -place, -date, -kremlin_id, -teaser)
+
+zakharova_unfiltered <- read.csv("C:/Users/12015/Desktop/popova_beland/MariaVladimirovnaZakharova/MariaVladimirovnaZakharova.csv")
+
+zakharova <- zakharova_unfiltered %>%
+  mutate(date_parsed = ymd_hms(date),
+         message = na_if(message, ""),
+         media_type = na_if(media_type, ""),
+         type = "telegram",
+         person = "zakharova",
+         transcript_filtered_int = message,
+         transcript_filtered =
+           str_remove_all(transcript_filtered_int, "https://[^\\s\"'>]+"),
+         transcript_filtered = na_if(transcript_filtered, "")
+         ) %>%
+  select(-first_name, -last_name, -username, 
+         -media_path, -reply_to, -date, -message_id, 
+         -media_type, -id, -sender_id, -message, -transcript_filtered_int) %>%
+  filter(!is.na(transcript_filtered))
+
+# Now attaching Zakharova df to ru_transcripts
+ru_transcripts_old <- full_join(ru_transcripts_mid, zakharova)
+
+lavrov_unfiltered <- ndjson::stream_in(normalizePath("C:/Users/12015/Desktop/popova_beland/data_raw/transcripts.ndjson")) %>%
+  mutate(type = "publication",
+         person = "lavrov") %>%
+  select(-speaker)
+
+pattern <- ",\\s*([А-Яа-яЁё\\-\\s]+?)?\\s*,?\\s*(\\d{1,2}\\s+[а-яё]+\\s+\\d{4})\\s+года"
+
+# Extract location and date
+matches <- as.data.frame(str_match(lavrov_unfiltered$title, pattern))
+
+lavrov_intermediate <- lavrov_unfiltered %>%
+  mutate(location = matches$V2,
+         date_ru = matches$V3,
+         transcript_unfiltered = content,
+         title = 
+           str_remove_all(title, ",\\s*([А-Яа-яЁё\\-\\s]+?)?\\s*,?\\s*(\\d{1,2}\\s+[а-яё]+\\s+\\d{4})\\s+года"))
+
+month_map <- c(
+  "января" = "01", "февраля" = "02", "марта" = "03",
+  "апреля" = "04", "мая" = "05", "июня" = "06",
+  "июля" = "07", "августа" = "08", "сентября" = "09",
+  "октября" = "10", "ноября" = "11", "декабря" = "12"
+)
+
+iso_dates <- sapply(lavrov_intermediate$date_ru, function(date) {
+  if (is.na(date)) return(NA)  # Early return if NA
+
+  parts <- str_split(str_trim(date), "\\s+", simplify = TRUE)
+  
+  if (ncol(parts) < 3) {
+    warning(paste("Skipping malformed date:", date))
+    return(NA)
+  }
+  
+  day <- sprintf("%02d", as.integer(parts[1]))
+  month_raw <- str_trim(parts[2])
+  month <- month_map[[month_raw]]
+  
+  if (is.null(month)) {
+    warning(paste("Unknown month name:", month_raw))
+    return(NA)
+  }
+  
+  year <- parts[3]
+  paste0(year, "-", month, "-", day)
+})
+
+lavrov <- lavrov_intermediate %>%
+  mutate(date = iso_dates,
+         date_parsed = ymd(date)) %>%
+  select(-location, -content, -date, -date_ru) # removing location - optional
+
+ru_transcripts <- full_join(ru_transcripts_old, lavrov)
+```
