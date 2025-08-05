@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+crawl-300d-2M.vec
+*.csv
+*.json
+data_raw/
+data_clean/
+output_transcripts/
+trump_truth/
