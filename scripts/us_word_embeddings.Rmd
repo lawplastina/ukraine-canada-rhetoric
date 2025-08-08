@@ -41,49 +41,6 @@ full_corpus <- tokens(full_corpus_int, remove_punct = TRUE) |>
     )
 ```
 
-## How many documents even mention Canada
-
-```{r}
-# Define target words
-target_words <- c("canada", "canadian", "canadians")
-
-matches <- sapply(trump_corpus, function(doc) any(target_words %in% doc))
-
-matches_full <- sapply(full_corpus, function(doc) any(target_words %in% doc))
-
-# Number of matching documents
-match_count <- sum(matches)
-match_count_full <- sum(matches_full)
-
-# Total number of documents
-total_docs <- ndoc(trump_corpus)
-total_docs_full <- ndoc(full_corpus)
-
-# Proportion
-match_proportion <- match_count / total_docs
-match_proportion_full <- match_count_full / total_docs_full
-
-# Output
-cat("Matching documents:", match_count, "\n")
-cat("Total documents:", total_docs, "\n")
-cat("Proportion:", round(match_proportion * 100, 2), "%\n")
-
-us_transcripts_canada <- us_transcripts %>%
-  filter(matches_full)
-
-write.csv(us_transcripts_canada["full_transcript"], "C:/Users/12015/Desktop/popova_beland/data_clean/canada_mentions.csv", row.names = FALSE)
-
-# Combine date and text per observation
-combined_lines <- paste0(
-  "Date: ", us_transcripts_canada$date_parsed, "\n\n",
-  us_transcripts_canada$full_transcript, "\n\n",
-  strrep("-", 40), "\n"
-)
-
-writeLines(combined_lines, "C:/Users/12015/Desktop/popova_beland/data_clean/canada_mentions.txt")
-
-```
-
 ## Cleaning and WVM calculation
 
 ```{r}
