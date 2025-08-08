@@ -1,4 +1,0 @@
-"0","vec_matrix <- read_vec_file(""C:\Users\12015\Desktop\popova_beland\crawl-300d-2M.vec"", n_max = 50000)
-"
-"2","Error: '\U' used without hex digits in character string (<input>:1:33)
-"
